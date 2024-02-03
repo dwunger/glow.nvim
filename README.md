@@ -8,13 +8,12 @@
     <small>Powered by charm's <a href="https://github.com/charmbracelet/glow">glow</a></small>
   </p>
   <img src="https://img.shields.io/badge/Made%20with%20Lua-blueviolet.svg?style=for-the-badge&logo=lua" />
-  <img src="https://img.shields.io/github/actions/workflow/status/ellisonleao/glow.nvim/default.yml?style=for-the-badge" />
+  <img src="https://img.shields.io/github/actions/workflow/status/dwunger/glow.nvim/default.yml?style=for-the-badge" />
   
 </div>
 
 https://user-images.githubusercontent.com/178641/215353259-eb8688fb-5600-4b95-89a2-0f286e3b6441.mp4
 
-**Breaking changes are now moved to a fixed topic in Discussions. [Click here](https://github.com/ellisonleao/glow.nvim/discussions/77) to see them**
 
 ## Prerequisites
 
@@ -27,7 +26,7 @@ https://user-images.githubusercontent.com/178641/215353259-eb8688fb-5600-4b95-89
 - [vim-plug](https://github.com/junegunn/vim-plug)
 
 ```
-Plug 'ellisonleao/glow.nvim'
+Plug 'dwunger/glow.nvim'
 lua << EOF
 require('glow').setup()
 EOF
@@ -36,13 +35,13 @@ EOF
 - [packer.nvim](https://github.com/wbthomason/packer.nvim)
 
 ```lua
-use {"ellisonleao/glow.nvim", config = function() require("glow").setup() end}
+use {"dwunger/glow.nvim", config = function() require("glow").setup() end}
 ```
 
 - [lazy.nvim](https://github.com/folke/lazy.nvim)
 
 ```lua
-{"ellisonleao/glow.nvim", config = true, cmd = "Glow"}
+{"dwunger/glow.nvim", config = true, cmd = "Glow"}
 ```
 
 ## Setup
