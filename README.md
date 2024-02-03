@@ -88,6 +88,11 @@ require('glow').setup({
 :Glow [path-to-md-file]
 ```
 
+### Fetch and preview a man page 
+```
+:Glow printf
+```
+
 ### Preview current buffer
 
 ```
