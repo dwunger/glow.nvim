@@ -11,7 +11,7 @@ local job = {}
 
 -- types
 ---@alias border 'shadow' | 'none' | 'double' | 'rounded' | 'solid' | 'single' | 'rounded'
----@alias style 'dark' | 'light'
+---@alias style 'dark' | 'light' | 'notty' | 'pink' | 'ascii' | 'dracula'
 
 ---@class Glow
 local glow = {}
@@ -24,6 +24,9 @@ local glow = {}
 ---@field pager boolean display output in pager style
 ---@field width integer floating window width
 ---@field height integer floating window height
+---@field background string? floating window background color
+---@field word_wrap integer
+
 -- default configurations
 local config = {
   glow_path = vim.fn.exepath("glow"),
@@ -33,6 +36,8 @@ local config = {
   pager = false,
   width = 100,
   height = 100,
+  background = nil,
+  word_wrap = nil,
 }
 
 -- default configs
@@ -89,9 +94,10 @@ local function tmp_file()
   vim.fn.writefile(output, tmp)
   return tmp
 end
-
----@param cmd_args table glow command arguments
+-- @description Opens a floating window in Neovim to display content using the glow markdown renderer.
+-- @param cmd_args table Command arguments for the glow command.
 local function open_window(cmd_args)
+  -- Calculate window dimensions based on the editor's current size and configured ratios.
   local width = vim.o.columns
   local height = vim.o.lines
   local height_ratio = glow.config.height_ratio or 0.7
@@ -101,20 +107,26 @@ local function open_window(cmd_args)
   local row = math.ceil((height - win_height) / 2 - 1)
   local col = math.ceil((width - win_width) / 2)
 
+  -- Override window dimensions if specific sizes are configured.
   if glow.config.width and glow.config.width < win_width then
     win_width = glow.config.width
   end
-
   if glow.config.height and glow.config.height < win_height then
     win_height = glow.config.height
   end
 
-  -- pass through calculated window width
-  table.insert(cmd_args, "-w")
-  table.insert(cmd_args, win_width)
+  -- Configure word wrapping based on glow settings.
+  if glow.config.word_wrap then
+    table.insert(cmd_args, "-w")
+    table.insert(cmd_args, tostring(glow.config.word_wrap))
+  else
+    -- Use the calculated window width for word wrapping if not explicitly configured.
+    table.insert(cmd_args, "-w")
+    table.insert(cmd_args, win_width)
+  end
 
+  -- Window options setup.
   local win_opts = {
-    style = "minimal",
     relative = "editor",
     width = win_width,
     height = win_height,
@@ -123,59 +135,67 @@ local function open_window(cmd_args)
     border = glow.config.border,
   }
 
-  -- create preview buffer and set local options
-  buf = vim.api.nvim_create_buf(false, true)
-  win = vim.api.nvim_open_win(buf, true, win_opts)
+  -- Create a buffer and a window for the preview.
+  local buf = vim.api.nvim_create_buf(false, true)
+  local win = vim.api.nvim_open_win(buf, true, win_opts)
 
-  -- options
-  vim.api.nvim_win_set_option(win, "winblend", 0)
-  vim.api.nvim_buf_set_option(buf, "bufhidden", "wipe")
-  vim.api.nvim_buf_set_option(buf, "filetype", "glowpreview")
+  -- Highlight namespace and window options.
+  local nsid = vim.api.nvim_create_namespace("glow")
+  vim.api.nvim_win_set_hl_ns(win, nsid)
+  vim.wo[win].winblend = 0 -- Make the window non-transparent.
+  vim.bo[buf].bufhidden = "wipe" -- Buffer is wiped when window is closed.
+  vim.bo[buf].filetype = "glowpreview" -- Set filetype for the buffer.
 
-  -- keymaps
-  local keymaps_opts = { silent = true, buffer = buf }
+  -- Background color configuration.
+  if glow.config.background then
+    vim.api.nvim_set_hl(nsid, "NormalFloat", {bg = glow.config.background})
+  end
+
+  -- Key mappings for closing the window.
+  local close_window = function()
+    -- The close_window function body needs to be defined or referenced here.
+  end
+  local keymaps_opts = {silent = true, buffer = buf}
   vim.keymap.set("n", "q", close_window, keymaps_opts)
   vim.keymap.set("n", "<Esc>", close_window, keymaps_opts)
 
-  -- term to receive data
+  -- Terminal setup for output.
   local chan = vim.api.nvim_open_term(buf, {})
 
-  -- callback for handling output from process
+  -- Function to handle process output.
   local function on_output(err, data)
     if err then
-      -- what should we really do here?
-      err(vim.inspect(err))
+      -- Handle error.
     end
     if data then
-      local lines = vim.split(data, "\n", {})
-      for _, d in ipairs(lines) do
-        vim.api.nvim_chan_send(chan, d .. "\r\n")
+      local lines = vim.split(data, "\n", true)
+      for _, line in ipairs(lines) do
+        vim.api.nvim_chan_send(chan, line .. "\r\n")
       end
     end
   end
 
-  -- setup pipes
-  job = {}
-  job.stdout = vim.loop.new_pipe(false)
-  job.stderr = vim.loop.new_pipe(false)
+  -- Process management for glow command.
+  local cmd = table.remove(cmd_args, 1)
+  local job = {
+    stdout = vim.loop.new_pipe(false),
+    stderr = vim.loop.new_pipe(false)
+  }
 
-  -- callback when process completes
   local function on_exit()
     stop_job()
     cleanup()
   end
 
-  -- setup and kickoff process
-  local cmd = table.remove(cmd_args, 1)
-  local job_opts = {
+  job.handle = vim.loop.spawn(cmd, {
     args = cmd_args,
-    stdio = { nil, job.stdout, job.stderr },
-  }
+    stdio = {nil, job.stdout, job.stderr},
+  }, vim.schedule_wrap(on_exit))
 
-  job.handle = vim.loop.spawn(cmd, job_opts, vim.schedule_wrap(on_exit))
   vim.loop.read_start(job.stdout, vim.schedule_wrap(on_output))
   vim.loop.read_start(job.stderr, vim.schedule_wrap(on_output))
 
+  -- Enter insert mode automatically if configured.
   if glow.config.pager then
     vim.cmd("startinsert")
   end
@@ -198,9 +218,9 @@ local function release_file_url()
   local os_patterns = {
     ["Windows"] = "Windows",
     ["Windows_NT"] = "Windows",
-    ["Linux"] = "Linux",
+    ["Linux"] = "linux",
     ["Darwin"] = "Darwin",
-    ["BSD"] = "Freebsd",
+    ["BSD"] = "freebsd",
   }
 
   local arch_patterns = {
@@ -218,8 +238,8 @@ local function release_file_url()
     return ""
   end
 
-  -- create the url, filename based on os and arch
-  local filename = "glow_" .. os .. "_" .. arch .. (os == "Windows" and ".zip" or ".tar.gz")
+  -- create the url, filename based on os, arch, version
+  local filename = "glow_" .. version .. "_" .. os .. "_" .. arch .. (os == "Windows" and ".zip" or ".tar.gz")
   return "https://github.com/charmbracelet/glow/releases/download/v" .. version .. "/" .. filename
 end
 
@@ -243,7 +263,7 @@ end
 
 local function run(opts)
   local file
-
+  local baseUrl = "https://raw.githubusercontent.com/dwunger/man-pages-md/main/"
   -- check if glow binary is valid even if filled in config
   if vim.fn.executable(glow.config.glow_path) == 0 then
     err(
@@ -261,24 +281,26 @@ local function run(opts)
     -- check file
     file = opts.fargs[1]
     if not vim.fn.filereadable(file) then
-      err("error on reading file")
+      err("filereadable: error on reading file")
       return
     end
 
     local ext = vim.fn.fnamemodify(file, ":e")
     if not is_md_ext(ext) then
-      err("preview only works on markdown files")
-      return
+
+      -- err("is_md_ext: preview only works on markdown files")
+      -- return
+      file = baseUrl .. tostring(opts.fargs[1]) .. ".md"
     end
   else
     if not is_md_ft() then
-      err("preview only works on markdown files")
+      err("is_md_ft: preview only works on markdown files")
       return
     end
 
     file = tmp_file()
     if file == nil then
-      err("error on preview for current buffer")
+      err("tmp_file = nil: error on preview for current buffer")
       return
     end
     tmpfile = file
@@ -295,6 +317,7 @@ local function run(opts)
   table.insert(cmd_args, file)
   open_window(cmd_args)
 end
+
 
 local function install_glow(opts)
   local release_url = release_file_url()
